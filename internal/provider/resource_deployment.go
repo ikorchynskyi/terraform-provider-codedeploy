@@ -136,25 +136,26 @@ func resourceDeployment() *schema.Resource {
 	}
 }
 
-func resourceDeploymentCreate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
+func resourceDeploymentCreate(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
 	svc := m.(*codedeploy.Client)
 
 	// Read and validate the input parameters
 	applicationName := d.Get("application_name").(string)
 	deploymentGroupName := d.Get("deployment_group_name").(string)
-	revisionType := d.Get("revision").([]interface{})[0].(map[string]interface{})["revision_type"].(string)
+	revision := d.Get("revision").([]any)[0].(map[string]any)
+	revisionType := revision["revision_type"].(string)
 
 	// Prepare the deployment input parameters based on the revision type
 	var input codedeploy.CreateDeploymentInput
 	switch revisionType {
 	case string(codedeployTypes.RevisionLocationTypeS3):
-		s3Location := d.Get("revision").([]interface{})[0].(map[string]interface{})["s3_location"].([]interface{})[0].(map[string]interface{})
+		s3Location := revision["s3_location"].([]any)[0].(map[string]any)
 		input = prepareDeploymentInputWithS3Location(applicationName, deploymentGroupName, s3Location)
 	case string(codedeployTypes.RevisionLocationTypeGitHub):
-		githubLocation := d.Get("revision").([]interface{})[0].(map[string]interface{})["github_location"].([]interface{})[0].(map[string]interface{})
+		githubLocation := revision["github_location"].([]any)[0].(map[string]any)
 		input = prepareDeploymentInputWithGitHubLocation(applicationName, deploymentGroupName, githubLocation)
 	case string(codedeployTypes.RevisionLocationTypeAppSpecContent):
-		appSpecContent := d.Get("revision").([]interface{})[0].(map[string]interface{})["appspec_content"].([]interface{})[0].(map[string]interface{})
+		appSpecContent := revision["appspec_content"].([]any)[0].(map[string]any)
 		input = prepareDeploymentInputWithAppSpecContent(applicationName, deploymentGroupName, appSpecContent)
 	}
 
@@ -181,7 +182,7 @@ func resourceDeploymentCreate(ctx context.Context, d *schema.ResourceData, m int
 	return resourceDeploymentRead(ctx, d, m)
 }
 
-func resourceDeploymentRead(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
+func resourceDeploymentRead(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
 	svc := m.(*codedeploy.Client)
 
 	// Read the deployment ID from the resource data
@@ -196,17 +197,19 @@ func resourceDeploymentRead(ctx context.Context, d *schema.ResourceData, m inter
 	}
 
 	// Update the resource data with the deployment status
-	d.Set("deployment_status", result.DeploymentInfo.Status)
+	if d.Set("deployment_status", result.DeploymentInfo.Status) != nil {
+		return diag.FromErr(err)
+	}
 
 	return nil
 }
 
-func resourceDeploymentDelete(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
+func resourceDeploymentDelete(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
 	// Nothing to do for deletion
 	return nil
 }
 
-func prepareDeploymentInputWithS3Location(applicationName, deploymentGroupName string, s3Location map[string]interface{}) codedeploy.CreateDeploymentInput {
+func prepareDeploymentInputWithS3Location(applicationName, deploymentGroupName string, s3Location map[string]any) codedeploy.CreateDeploymentInput {
 	return codedeploy.CreateDeploymentInput{
 		ApplicationName:     aws.String(applicationName),
 		DeploymentGroupName: aws.String(deploymentGroupName),
@@ -221,7 +224,7 @@ func prepareDeploymentInputWithS3Location(applicationName, deploymentGroupName s
 	}
 }
 
-func prepareDeploymentInputWithGitHubLocation(applicationName, deploymentGroupName string, githubLocation map[string]interface{}) codedeploy.CreateDeploymentInput {
+func prepareDeploymentInputWithGitHubLocation(applicationName, deploymentGroupName string, githubLocation map[string]any) codedeploy.CreateDeploymentInput {
 	return codedeploy.CreateDeploymentInput{
 		ApplicationName:     aws.String(applicationName),
 		DeploymentGroupName: aws.String(deploymentGroupName),
@@ -235,7 +238,7 @@ func prepareDeploymentInputWithGitHubLocation(applicationName, deploymentGroupNa
 	}
 }
 
-func prepareDeploymentInputWithAppSpecContent(applicationName, deploymentGroupName string, appSpecContent map[string]interface{}) codedeploy.CreateDeploymentInput {
+func prepareDeploymentInputWithAppSpecContent(applicationName, deploymentGroupName string, appSpecContent map[string]any) codedeploy.CreateDeploymentInput {
 	content := appSpecContent["content"].(string)
 	var sha256Hash string
 	if appSpecContent["sha256"] == nil {
