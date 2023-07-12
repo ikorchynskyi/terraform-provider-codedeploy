@@ -2,7 +2,7 @@ HOSTNAME=terraform.local
 NAMESPACE=ikorchynskyi
 NAME=codedeploy
 BINARY=terraform-provider-${NAME}
-VERSION=0.1.0
+VERSION=0.1.2
 OS_ARCH=linux_amd64
 
 .PHONY: build release install test testacc

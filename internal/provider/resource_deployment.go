@@ -20,6 +20,7 @@ func resourceDeployment() *schema.Resource {
 	return &schema.Resource{
 		CreateContext: resourceDeploymentCreate,
 		ReadContext:   resourceDeploymentRead,
+		UpdateContext: resourceDeploymentUpdate,
 		DeleteContext: resourceDeploymentDelete,
 		Schema: map[string]*schema.Schema{
 			"application_name": {
@@ -45,6 +46,7 @@ func resourceDeployment() *schema.Resource {
 						"revision_type": {
 							Type:        schema.TypeString,
 							Required:    true,
+							ForceNew:    true,
 							Description: "Type of the revision",
 							ValidateFunc: validation.StringInSlice([]string{
 								string(codedeployTypes.RevisionLocationTypeS3),
@@ -55,6 +57,7 @@ func resourceDeployment() *schema.Resource {
 						"s3_location": {
 							Type:        schema.TypeList,
 							Optional:    true,
+							ForceNew:    true,
 							MaxItems:    1,
 							Description: "S3 location details for the revision",
 							Elem: &schema.Resource{
@@ -84,6 +87,7 @@ func resourceDeployment() *schema.Resource {
 						"github_location": {
 							Type:        schema.TypeList,
 							Optional:    true,
+							ForceNew:    true,
 							MaxItems:    1,
 							Description: "GitHub location details for the revision",
 							Elem: &schema.Resource{
@@ -104,6 +108,7 @@ func resourceDeployment() *schema.Resource {
 						"appspec_content": {
 							Type:        schema.TypeList,
 							Optional:    true,
+							ForceNew:    true,
 							MaxItems:    1,
 							Description: "AppSpec location details for the revision",
 							Elem: &schema.Resource{
@@ -123,6 +128,12 @@ func resourceDeployment() *schema.Resource {
 						},
 					},
 				},
+			},
+			"auto_rollback_enabled": {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				Default:     true,
+				Description: "Indicates whether a failed deployment should be rolled back",
 			},
 			"deployment_status": {
 				Type:        schema.TypeString,
@@ -160,24 +171,35 @@ func resourceDeploymentCreate(ctx context.Context, d *schema.ResourceData, m any
 	}
 
 	// Create the deployment
-	result, err := svc.CreateDeployment(ctx, &input)
+	deployment, err := svc.CreateDeployment(ctx, &input)
 	if err != nil {
 		return diag.FromErr(err)
 	}
 
 	// Wait for the deployment to complete or timeout
+	delay := 15 * time.Second
 	waiter := codedeploy.NewDeploymentSuccessfulWaiter(svc, func(o *codedeploy.DeploymentSuccessfulWaiterOptions) {
-		o.MaxDelay = 30 * time.Second
+		o.MaxDelay = delay
 	})
-	_, err = waiter.WaitForOutput(ctx, &codedeploy.GetDeploymentInput{
-		DeploymentId: result.DeploymentId,
-	}, d.Timeout(schema.TimeoutCreate))
+	output, err := waiter.WaitForOutput(ctx, &codedeploy.GetDeploymentInput{
+		DeploymentId: deployment.DeploymentId,
+	}, d.Timeout(schema.TimeoutCreate)-delay)
 	if err != nil {
-		return diag.FromErr(err)
+		diags := diag.FromErr(err)
+		if output == nil {
+			_, err = svc.StopDeployment(ctx, &codedeploy.StopDeploymentInput{
+				DeploymentId:        deployment.DeploymentId,
+				AutoRollbackEnabled: aws.Bool(d.Get("auto_rollback_enabled").(bool)),
+			})
+			if err != nil {
+				diags = append(diags, diag.FromErr(err)...)
+			}
+		}
+		return diags
 	}
 
 	// Store the deployment ID in the resource data
-	d.SetId(*result.DeploymentId)
+	d.SetId(*deployment.DeploymentId)
 
 	return resourceDeploymentRead(ctx, d, m)
 }
@@ -188,8 +210,8 @@ func resourceDeploymentRead(ctx context.Context, d *schema.ResourceData, m any) 
 	// Read the deployment ID from the resource data
 	deploymentID := d.Id()
 
-	// Describe the deployment
-	result, err := svc.GetDeployment(ctx, &codedeploy.GetDeploymentInput{
+	// Fetch the deployment
+	deployment, err := svc.GetDeployment(ctx, &codedeploy.GetDeploymentInput{
 		DeploymentId: aws.String(deploymentID),
 	})
 	if err != nil {
@@ -197,15 +219,55 @@ func resourceDeploymentRead(ctx context.Context, d *schema.ResourceData, m any) 
 	}
 
 	// Update the resource data with the deployment status
-	if d.Set("deployment_status", result.DeploymentInfo.Status) != nil {
+	if d.Set("deployment_status", deployment.DeploymentInfo.Status) != nil {
 		return diag.FromErr(err)
 	}
 
 	return nil
 }
 
+func resourceDeploymentUpdate(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
+	// Nothing to do for update
+	return nil
+}
+
 func resourceDeploymentDelete(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
-	// Nothing to do for deletion
+	svc := m.(*codedeploy.Client)
+
+	// Read the deployment ID from the resource data
+	deploymentID := d.Id()
+
+	// Fetch the deployment
+	deployment, err := svc.GetDeployment(ctx, &codedeploy.GetDeploymentInput{
+		DeploymentId: aws.String(deploymentID),
+	})
+	if err != nil {
+		return diag.Diagnostics{
+			diag.Diagnostic{
+				Severity: diag.Warning,
+				Summary:  err.Error(),
+			},
+		}
+	}
+
+	status := deployment.DeploymentInfo.Status
+	if status != codedeployTypes.DeploymentStatusSucceeded &&
+		status != codedeployTypes.DeploymentStatusFailed &&
+		status != codedeployTypes.DeploymentStatusStopped {
+		_, err = svc.StopDeployment(ctx, &codedeploy.StopDeploymentInput{
+			DeploymentId:        deployment.DeploymentInfo.DeploymentId,
+			AutoRollbackEnabled: aws.Bool(d.Get("auto_rollback_enabled").(bool)),
+		})
+		if err != nil {
+			return diag.Diagnostics{
+				diag.Diagnostic{
+					Severity: diag.Warning,
+					Summary:  err.Error(),
+				},
+			}
+		}
+	}
+
 	return nil
 }
 
