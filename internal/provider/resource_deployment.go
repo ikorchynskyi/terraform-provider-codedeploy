@@ -121,6 +121,7 @@ func resourceDeployment() *schema.Resource {
 									"sha256": {
 										Type:        schema.TypeString,
 										Optional:    true,
+										Computed:    true,
 										Description: "The SHA256 hash value of the revision content",
 									},
 								},
@@ -140,6 +141,9 @@ func resourceDeployment() *schema.Resource {
 				Computed:    true,
 				Description: "Status of the deployment",
 			},
+		},
+		Importer: &schema.ResourceImporter{
+			StateContext: schema.ImportStatePassthroughContext,
 		},
 		Timeouts: &schema.ResourceTimeout{
 			Create: schema.DefaultTimeout(60 * time.Minute),
@@ -218,7 +222,13 @@ func resourceDeploymentRead(ctx context.Context, d *schema.ResourceData, m any) 
 		return diag.FromErr(err)
 	}
 
-	// Update the resource data with the deployment status
+	// Update the resource data
+	if d.Set("application_name", deployment.DeploymentInfo.ApplicationName) != nil {
+		return diag.FromErr(err)
+	}
+	if d.Set("deployment_group_name", deployment.DeploymentInfo.DeploymentGroupName) != nil {
+		return diag.FromErr(err)
+	}
 	if d.Set("deployment_status", deployment.DeploymentInfo.Status) != nil {
 		return diag.FromErr(err)
 	}
