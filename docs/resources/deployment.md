@@ -23,6 +23,7 @@ description: |-
 
 ### Optional
 
+- `auto_rollback_enabled` (Boolean) Indicates whether a failed deployment should be rolled back
 - `timeouts` (Block, Optional) (see [below for nested schema](#nestedblock--timeouts))
 
 ### Read-Only
