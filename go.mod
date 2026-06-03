@@ -3,7 +3,7 @@ module github.com/ikorchynskyi/terraform-provider-codedeploy
 go 1.24.0
 
 require (
-	github.com/aws/aws-sdk-go-v2 v1.41.9
+	github.com/aws/aws-sdk-go-v2 v1.41.10
 	github.com/aws/aws-sdk-go-v2/config v1.32.20
 	github.com/aws/aws-sdk-go-v2/service/codedeploy v1.35.14
 	github.com/hashicorp/terraform-plugin-docs v0.24.0
